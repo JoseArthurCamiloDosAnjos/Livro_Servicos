@@ -38,7 +38,8 @@
     ],
     "win": {
       "target": "portable",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "icon": "assets/Logo.png"
     },
     "forceCodeSigning": false,
     "executableName": "Livro de Serviços"
