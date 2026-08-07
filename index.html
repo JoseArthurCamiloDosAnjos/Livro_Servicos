@@ -7,9 +7,21 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="chart.umd.min.js"></script>
+<script src="jspdf.umd.min.js"></script>
 </head>
 <body>
+
+<div id="loading-screen" class="loading-screen">
+  <div class="loading-conteudo">
+    <div class="loading-livro">
+      <div class="loading-pagina loading-pagina-1"></div>
+      <div class="loading-pagina loading-pagina-2"></div>
+      <div class="loading-pagina loading-pagina-3"></div>
+    </div>
+    <p class="loading-texto">Carregando save...</p>
+  </div>
+</div>
 
 <div class="capa">
   <header class="lombada">
@@ -17,6 +29,10 @@
       <span class="selo">Livro nº 01</span>
       <h1>Livro de Serviços</h1>
       <p class="subtitulo">cadastro, preços e contabilização</p>
+      <div class="botoes-topo">
+        <button class="btn-topo" id="btn-dark-mode" title="Modo escuro">☀</button>
+        <button class="btn-topo" id="btn-creditos" title="Créditos">ℹ</button>
+      </div>
     </div>
 
     <nav class="abas" id="abas">
@@ -56,6 +72,11 @@
           <input type="text" id="servico-nome" placeholder="Ex.: Corte de cabelo" required>
         </div>
 
+        <div class="campo">
+          <label for="servico-cliente">Nome do cliente</label>
+          <input type="text" id="servico-cliente" placeholder="Ex.: Maria da Silva">
+        </div>
+
         <div class="linha-dupla">
           <div class="campo">
             <label for="servico-categoria">Categoria</label>
@@ -75,6 +96,13 @@
             <input type="date" id="servico-data" required>
           </div>
 
+          <div class="campo">
+            <label for="servico-data-entrega">Data de entrega <span class="opcional">(opcional)</span></label>
+            <input type="date" id="servico-data-entrega">
+          </div>
+        </div>
+
+        <div class="linha-dupla">
           <div class="campo campo-check">
             <label class="check">
               <input type="checkbox" id="servico-ativo" checked>
@@ -104,6 +132,11 @@
         <p class="tela-legenda">Consulte, edite ou remova os itens do seu catálogo.</p>
       </div>
 
+      <div class="card-pendencias" id="card-pendencias">
+        <span class="card-pendencias-numero" id="pendencias-numero">0</span>
+        <p class="card-pendencias-texto"><strong id="pendencias-texto">Nenhum serviço</strong> pendente de pagamento</p>
+      </div>
+
       <div class="filtros">
         <input type="search" id="busca-servico" placeholder="Buscar por nome...">
         <select id="filtro-categoria">
@@ -121,8 +154,10 @@
           <thead>
             <tr>
               <th class="col-nome">Serviço</th>
+              <th class="col-categoria">Cliente</th>
               <th class="col-categoria">Categoria</th>
               <th class="col-preco">Preço</th>
+              <th class="col-status">Entrega</th>
               <th class="col-status">Status</th>
               <th class="col-status">Pagamento</th>
               <th class="col-acoes">Ações</th>
@@ -230,20 +265,46 @@
       <!-- Cards de Resumo -->
       <div class="cards-resumo">
         <div class="card-resumo card-total">
-          <span class="card-label">Total Geral</span>
+          <span class="card-label">Valor Bruto</span>
           <span class="card-valor" id="card-total-geral">R$ 0,00</span>
         </div>
+        <div class="card-resumo card-despesas">
+          <span class="card-label">Despesas</span>
+          <span class="card-valor" id="card-total-despesas">R$ 0,00</span>
+        </div>
+        <div class="card-resumo card-liquido">
+          <span class="card-label">Valor Líquido</span>
+          <span class="card-valor" id="card-total-liquido">R$ 0,00</span>
+        </div>
         <div class="card-resumo card-pago">
-          <span class="card-label">Total Pago</span>
+          <span class="card-label">Recebido</span>
           <span class="card-valor" id="card-total-pago">R$ 0,00</span>
         </div>
         <div class="card-resumo card-pendente">
-          <span class="card-label">Total Pendente</span>
+          <span class="card-label">Pendente</span>
           <span class="card-valor" id="card-total-pendente">R$ 0,00</span>
         </div>
         <div class="card-resumo card-quantidade">
           <span class="card-label">Serviços</span>
           <span class="card-valor" id="card-quantidade">0</span>
+        </div>
+      </div>
+
+      <!-- Serviços Pendentes -->
+      <div class="secao-pendentes" id="secao-pendentes" hidden>
+        <h3 class="secao-titulo">Serviços Pendentes de Pagamento</h3>
+        <div class="tabela-wrap">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th>Serviço</th>
+                <th>Cliente</th>
+                <th>Preço</th>
+                <th>Concluído em</th>
+              </tr>
+            </thead>
+            <tbody id="corpo-tabela-pendentes"></tbody>
+          </table>
         </div>
       </div>
 
@@ -279,8 +340,39 @@
       </div>
     </section>
 
+    <!-- TELA V — CRÉDITOS -->
+    <section class="tela creditos-tela" id="tela-creditos" data-tela="creditos" hidden>
+      <button class="btn-voltar-topo" id="btn-voltar-creditos">← Voltar</button>
+      <div class="creditos-card">
+        <h2 class="creditos-titulo">Créditos</h2>
+        <div class="creditos-linha"></div>
+
+        <div class="creditos-item">
+          <span class="creditos-label">Criador</span>
+          <span class="creditos-valor">Jose Arthur Camilo dos Anjos</span>
+        </div>
+
+        <div class="creditos-item">
+          <span class="creditos-label">Objetivo</span>
+          <p class="creditos-texto">Organize seus serviços de um jeito simples, rápido e sem complicação! O Livro de Serviços foi criado para ajudar você a manter todos os seus trabalhos em um só lugar. Cadastre seus serviços, organize por categorias, defina valores, acompanhe o andamento de cada atividade e tenha um histórico completo sempre que precisar. Esqueça planilhas bagunçadas ou anotações perdidas. Com uma interface intuitiva e prática, você tem mais controle sobre seus serviços, economiza tempo e consegue focar no que realmente importa: entregar um ótimo trabalho para seus clientes. Tudo o que você precisa para gerenciar seus serviços, em um único lugar.</p>
+        </div>
+
+        <div class="creditos-item">
+          <span class="creditos-label">Data de criação</span>
+          <span class="creditos-valor">Julho de 2025</span>
+        </div>
+
+        <div class="creditos-item">
+          <span class="creditos-label">Tecnologias</span>
+          <span class="creditos-valor">Electron · SQLite · Chart.js</span>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
+
+<div id="toast-container" class="toast-container"></div>
 
 <script src="script.js"></script>
 </body>

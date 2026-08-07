@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld("api", {
   obterDespesas: () => ipcRenderer.invoke("obterDespesas"),
   salvarDespesa: (dados) => ipcRenderer.invoke("salvarDespesa", dados),
   excluirDespesa: (id) => ipcRenderer.invoke("excluirDespesa", id),
+  salvarPdf: (dados) => ipcRenderer.invoke("salvarPdf", dados),
 });

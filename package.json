@@ -32,6 +32,8 @@
       "index.html",
       "style.css",
       "script.js",
+      "chart.umd.min.js",
+      "jspdf.umd.min.js",
       "Save/**/*"
     ],
     "win": {

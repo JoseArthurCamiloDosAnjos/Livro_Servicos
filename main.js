@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const { inicializarBanco, obterServicos, salvarServico, atualizarServico, excluirServico, obterDespesas, salvarDespesa, excluirDespesa } = require("./database");
 
 let mainWindow;
@@ -60,4 +61,17 @@ ipcMain.handle("salvarDespesa", (evento, dados) => {
 
 ipcMain.handle("excluirDespesa", (evento, id) => {
   return excluirDespesa(id);
+});
+
+ipcMain.handle("salvarPdf", async (evento, { base64, nomePadrao }) => {
+  const resultado = await dialog.showSaveDialog(mainWindow, {
+    title: "Salvar relatório PDF",
+    defaultPath: nomePadrao,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+
+  if (resultado.canceled) return { cancelado: true };
+
+  fs.writeFileSync(resultado.filePath, Buffer.from(base64, "base64"));
+  return { cancelado: false, caminho: resultado.filePath };
 });

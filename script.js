@@ -10,6 +10,25 @@ let despesas = [];
 let edicaoAtualId = null;
 let graficos = {};
 
+/* ---------- Modo Escuro ---------- */
+
+const btnDarkMode = document.getElementById("btn-dark-mode");
+
+function aplicarTema() {
+  const darkMode = localStorage.getItem("darkMode") === "true";
+  document.body.classList.toggle("dark-mode", darkMode);
+  btnDarkMode.textContent = darkMode ? "☾" : "☀";
+  btnDarkMode.title = darkMode ? "Modo claro" : "Modo escuro";
+}
+
+btnDarkMode.addEventListener("click", () => {
+  const atual = localStorage.getItem("darkMode") === "true";
+  localStorage.setItem("darkMode", String(!atual));
+  aplicarTema();
+});
+
+aplicarTema();
+
 /* ---------- Utilitários ---------- */
 
 function gerarId() {
@@ -34,6 +53,21 @@ function escaparHtml(texto) {
 
 function obterDataHoje() {
   return new Date().toISOString().slice(0, 10);
+}
+
+/* ---------- Toasts ---------- */
+
+function mostrarToast(texto, tipo = "info", duracao = 3500) {
+  const container = document.getElementById("toast-container");
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${tipo}`;
+  toast.textContent = texto;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("saindo");
+    toast.addEventListener("animationend", () => toast.remove());
+  }, duracao);
 }
 
 function obterServicosNoPeriodo(periodo) {
@@ -70,17 +104,80 @@ function obterNomePeriodo(periodo) {
   return nomes[periodo] || periodo;
 }
 
+function obterDespesasNoPeriodo(periodo) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  return despesas.filter((d) => {
+    if (!d.data) return periodo === "tudo";
+
+    const dataDespesa = new Date(d.data + "T00:00:00");
+
+    if (periodo === "semana") {
+      const inicioSemana = new Date(hoje);
+      inicioSemana.setDate(hoje.getDate() - hoje.getDay());
+      return dataDespesa >= inicioSemana && dataDespesa <= hoje;
+    }
+    if (periodo === "mes") {
+      return dataDespesa.getFullYear() === hoje.getFullYear() && dataDespesa.getMonth() === hoje.getMonth();
+    }
+    if (periodo === "ano") {
+      return dataDespesa.getFullYear() === hoje.getFullYear();
+    }
+    return true;
+  });
+}
+
 /* ===================================================================
    NAVEGAÇÃO ENTRE TELAS
 =================================================================== */
 
 const abas = document.querySelectorAll(".aba");
 const telas = document.querySelectorAll(".tela");
+let telaAnterior = "cadastro";
 
 function irParaTela(nomeTela) {
+  const telaCreditos = document.getElementById("tela-creditos");
+  const saindoCreditos = telaCreditos && !telaCreditos.hidden && nomeTela !== "creditos";
+
+  if (saindoCreditos) {
+    const restaurar = telaAnterior;
+    telaCreditos.classList.remove("creditos-ativo");
+    telaCreditos.addEventListener("transitionend", function handler() {
+      telaCreditos.hidden = true;
+      telas.forEach((t) => {
+        t.hidden = t.dataset.tela !== restaurar;
+      });
+      abas.forEach((aba) => {
+        const ativa = aba.dataset.tela === restaurar;
+        if (ativa) aba.setAttribute("aria-current", "page");
+        else aba.removeAttribute("aria-current");
+      });
+      if (restaurar === "lista") renderizarLista();
+      if (restaurar === "despesas") renderizarDespesas();
+      if (restaurar === "relatorios") renderizarRelatorios();
+      telaCreditos.removeEventListener("transitionend", handler);
+    });
+    return;
+  }
+
+  if (nomeTela !== "creditos") {
+    telaAnterior = nomeTela;
+  }
+
   telas.forEach((tela) => {
     tela.hidden = tela.dataset.tela !== nomeTela;
   });
+
+  if (nomeTela === "creditos") {
+    telaCreditos.hidden = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        telaCreditos.classList.add("creditos-ativo");
+      });
+    });
+  }
+
   abas.forEach((aba) => {
     const ativa = aba.dataset.tela === nomeTela;
     aba.toggleAttribute("aria-current", ativa);
@@ -100,6 +197,12 @@ document.querySelectorAll("[data-ir-para]").forEach((botao) => {
   botao.addEventListener("click", () => irParaTela(botao.dataset.irPara));
 });
 
+const btnCreditos = document.getElementById("btn-creditos");
+const btnVoltarCreditos = document.getElementById("btn-voltar-creditos");
+
+btnCreditos.addEventListener("click", () => irParaTela("creditos"));
+btnVoltarCreditos.addEventListener("click", () => irParaTela("cadastro"));
+
 /* ===================================================================
    TELA I — CADASTRO / EDIÇÃO DE SERVIÇO
 =================================================================== */
@@ -107,14 +210,15 @@ document.querySelectorAll("[data-ir-para]").forEach((botao) => {
 const formServico = document.getElementById("form-servico");
 const campoId = document.getElementById("servico-id");
 const campoNome = document.getElementById("servico-nome");
+const campoCliente = document.getElementById("servico-cliente");
 const campoCategoria = document.getElementById("servico-categoria");
 const campoPreco = document.getElementById("servico-preco");
 const campoDescricao = document.getElementById("servico-descricao");
 const campoAtivo = document.getElementById("servico-ativo");
 const campoData = document.getElementById("servico-data");
+const campoDataEntrega = document.getElementById("servico-data-entrega");
 const btnSalvar = document.getElementById("btn-salvar");
 const btnCancelarEdicao = document.getElementById("btn-cancelar-edicao");
-const mensagemCadastro = document.getElementById("mensagem-cadastro");
 const listaCategorias = document.getElementById("lista-categorias");
 
 function atualizarDatalistCategorias() {
@@ -139,53 +243,47 @@ formServico.addEventListener("submit", async (evento) => {
   const preco = parseFloat(campoPreco.value);
 
   if (!nome) {
-    exibirMensagem(mensagemCadastro, "Informe o nome do serviço.", "erro");
+    mostrarToast("Informe o nome do serviço.", "erro");
     campoNome.focus();
     return;
   }
   if (isNaN(preco) || preco < 0) {
-    exibirMensagem(mensagemCadastro, "Informe um preço válido.", "erro");
+    mostrarToast("Informe um preço válido.", "erro");
     campoPreco.focus();
     return;
   }
 
   const dados = {
     nome,
+    cliente: campoCliente.value.trim(),
     categoria: campoCategoria.value.trim(),
     preco,
     descricao: campoDescricao.value.trim(),
     ativo: campoAtivo.checked,
     data_criacao: campoData.value || obterDataHoje(),
+    data_entrega: campoDataEntrega.value || null,
   };
 
   if (edicaoAtualId) {
     await window.api.atualizarServico(edicaoAtualId, dados);
-    exibirMensagem(mensagemCadastro, "Serviço atualizado com sucesso.", "sucesso");
+    mostrarToast("Serviço atualizado com sucesso.", "sucesso");
+    servicos = await window.api.obterServicos();
+    atualizarDatalistCategorias();
+    limparFormServico();
+    irParaTela("lista");
   } else {
     dados.pago = false;
     await window.api.salvarServico(dados);
-    exibirMensagem(mensagemCadastro, "Serviço registrado no livro.", "sucesso");
+    mostrarToast("Serviço registrado no livro.", "sucesso");
+    servicos = await window.api.obterServicos();
+    atualizarDatalistCategorias();
+    limparFormServico();
   }
-
-  servicos = await window.api.obterServicos();
-  atualizarDatalistCategorias();
-  limparFormServico();
 });
 
 btnCancelarEdicao.addEventListener("click", () => {
   limparFormServico();
-  exibirMensagem(mensagemCadastro, "", "");
 });
-
-function exibirMensagem(elemento, texto, tipo) {
-  elemento.textContent = texto;
-  elemento.className = "mensagem" + (tipo ? " " + tipo : "");
-  if (texto) {
-    setTimeout(() => {
-      if (elemento.textContent === texto) elemento.textContent = "";
-    }, 4000);
-  }
-}
 
 function iniciarEdicaoServico(id) {
   const servico = servicos.find((s) => s.id === id);
@@ -193,11 +291,13 @@ function iniciarEdicaoServico(id) {
 
   campoId.value = servico.id;
   campoNome.value = servico.nome;
+  campoCliente.value = servico.cliente || "";
   campoCategoria.value = servico.categoria || "";
   campoPreco.value = servico.preco;
   campoDescricao.value = servico.descricao || "";
   campoAtivo.checked = servico.ativo;
   campoData.value = servico.data_criacao || obterDataHoje();
+  campoDataEntrega.value = servico.data_entrega || "";
 
   edicaoAtualId = servico.id;
   btnSalvar.textContent = "Salvar alterações";
@@ -226,8 +326,24 @@ function atualizarFiltroCategorias() {
   filtroCategoria.value = categorias.includes(selecionado) ? selecionado : "";
 }
 
+const pendenciasNumero = document.getElementById("pendencias-numero");
+const pendenciasTexto = document.getElementById("pendencias-texto");
+
+function atualizarPendencias() {
+  const pendentes = servicos.filter((s) => s.concluido && !s.pago).length;
+  pendenciasNumero.textContent = pendentes;
+  if (pendentes === 0) {
+    pendenciasTexto.textContent = "Nenhum serviço";
+  } else if (pendentes === 1) {
+    pendenciasTexto.textContent = "1 serviço";
+  } else {
+    pendenciasTexto.textContent = `${pendentes} serviços`;
+  }
+}
+
 function renderizarLista() {
   atualizarFiltroCategorias();
+  atualizarPendencias();
 
   const termo = buscaServico.value.trim().toLowerCase();
   const categoria = filtroCategoria.value;
@@ -258,12 +374,15 @@ function renderizarLista() {
       (s) => `
     <tr>
       <td class="nome-servico-cel">${escaparHtml(s.nome)}</td>
+      <td>${s.cliente ? escaparHtml(s.cliente) : "—"}</td>
       <td>${s.categoria ? `<span class="categoria-tag">${escaparHtml(s.categoria)}</span>` : "—"}</td>
       <td class="col-preco">${formatarMoeda(s.preco)}</td>
-      <td><span class="status-pill ${s.ativo ? "ativo" : "inativo"}">${s.ativo ? "Ativo" : "Inativo"}</span></td>
+      <td>${s.data_entrega ? formatarData(s.data_entrega) : "—"}</td>
+      <td><span class="status-pill ${s.concluido ? "concluido" : "ativo"}">${s.concluido ? "Concluído" : "Andamento"}</span></td>
       <td><span class="status-pill ${s.pago ? "pago" : "pendente"}">${s.pago ? "Pago" : "Pendente"}</span></td>
       <td class="col-acoes">
-        <button class="acao-link" data-pagar="${s.id}">${s.pago ? "Marcar como não pago" : "Marcar como pago"}</button>
+        ${!s.concluido ? `<button class="acao-link concluir" data-concluir="${s.id}">Concluir</button>` : ""}
+        <button class="acao-link" data-pagar="${s.id}">${s.pago ? "Não pago" : "Pago"}</button>
         <button class="acao-link" data-editar="${s.id}">Editar</button>
         <button class="acao-link excluir" data-excluir="${s.id}">Excluir</button>
       </td>
@@ -271,6 +390,9 @@ function renderizarLista() {
     )
     .join("");
 
+  corpoTabelaServicos.querySelectorAll("[data-concluir]").forEach((botao) => {
+    botao.addEventListener("click", () => concluirServico(botao.dataset.concluir));
+  });
   corpoTabelaServicos.querySelectorAll("[data-pagar]").forEach((botao) => {
     botao.addEventListener("click", () => alternarPagamento(botao.dataset.pagar));
   });
@@ -298,6 +420,17 @@ async function alternarPagamento(id) {
   await window.api.atualizarServico(id, dados);
   servicos = await window.api.obterServicos();
   renderizarLista();
+  mostrarToast(novoPago ? "Serviço marcado como pago." : "Serviço marcado como pendente.", "info");
+}
+
+async function concluirServico(id) {
+  const servico = servicos.find((s) => s.id === id);
+  if (!servico) return;
+
+  await window.api.atualizarServico(id, { concluido: true });
+  servicos = await window.api.obterServicos();
+  renderizarLista();
+  mostrarToast(`Serviço "${servico.nome}" concluído — pendente de pagamento.`, "sucesso");
 }
 
 async function excluirServico(id) {
@@ -310,6 +443,7 @@ async function excluirServico(id) {
   servicos = await window.api.obterServicos();
   atualizarDatalistCategorias();
   renderizarLista();
+  mostrarToast(`Serviço "${servico.nome}" removido.`, "aviso");
 }
 
 [buscaServico, filtroCategoria, filtroStatus].forEach((el) => {
@@ -328,7 +462,6 @@ const campoDespesaData = document.getElementById("despesa-data");
 const campoDespesaCategoria = document.getElementById("despesa-categoria");
 const campoDespesaDescricao = document.getElementById("despesa-descricao");
 const btnSalvarDespesa = document.getElementById("btn-salvar-despesa");
-const mensagemDespesa = document.getElementById("mensagem-despesa");
 const corpoTabelaDespesas = document.getElementById("corpo-tabela-despesas");
 const despesasVazia = document.getElementById("despesas-vazia");
 const listaCategoriasDespesa = document.getElementById("lista-categorias-despesa");
@@ -350,12 +483,12 @@ formDespesa.addEventListener("submit", async (evento) => {
   const valor = parseFloat(campoDespesaValor.value);
 
   if (!nome) {
-    exibirMensagem(mensagemDespesa, "Informe o nome da despesa.", "erro");
+    mostrarToast("Informe o nome da despesa.", "erro");
     campoDespesaNome.focus();
     return;
   }
   if (isNaN(valor) || valor <= 0) {
-    exibirMensagem(mensagemDespesa, "Informe um valor válido.", "erro");
+    mostrarToast("Informe um valor válido.", "erro");
     campoDespesaValor.focus();
     return;
   }
@@ -369,7 +502,7 @@ formDespesa.addEventListener("submit", async (evento) => {
   };
 
   await window.api.salvarDespesa(dados);
-  exibirMensagem(mensagemDespesa, "Despesa registrada com sucesso.", "sucesso");
+  mostrarToast("Despesa registrada com sucesso.", "sucesso");
 
   despesas = await window.api.obterDespesas();
   atualizarDatalistCategoriasDespesa();
@@ -416,6 +549,7 @@ async function excluirDespesa(id) {
   await window.api.excluirDespesa(id);
   despesas = await window.api.obterDespesas();
   renderizarDespesas();
+  mostrarToast("Despesa removida.", "aviso");
 }
 
 /* ===================================================================
@@ -426,6 +560,8 @@ const cardTotalGeral = document.getElementById("card-total-geral");
 const cardTotalPago = document.getElementById("card-total-pago");
 const cardTotalPendente = document.getElementById("card-total-pendente");
 const cardQuantidade = document.getElementById("card-quantidade");
+const cardTotalDespesas = document.getElementById("card-total-despesas");
+const cardTotalLiquido = document.getElementById("card-total-liquido");
 const relatoriosVazio = document.getElementById("relatorios-vazio");
 const graficosContainer = document.querySelector(".graficos-container");
 const filtroPeriodo = document.getElementById("filtro-periodo");
@@ -434,10 +570,14 @@ const btnExportarPdf = document.getElementById("btn-exportar-pdf");
 function processarDadosRelatorios(servicosFiltrados) {
   const totalGeral = servicosFiltrados.reduce((soma, s) => soma + s.preco, 0);
   const totalPago = servicosFiltrados.filter((s) => s.pago).reduce((soma, s) => soma + s.preco, 0);
-  const totalPendente = totalGeral - totalPago;
+  const totalPendente = servicosFiltrados.filter((s) => s.concluido && !s.pago).reduce((soma, s) => soma + s.preco, 0);
   const quantidade = servicosFiltrados.length;
 
-  return { totalGeral, totalPago, totalPendente, quantidade };
+  const despesasPeriodo = obterDespesasNoPeriodo(filtroPeriodo.value);
+  const totalDespesas = despesasPeriodo.reduce((soma, d) => soma + d.valor, 0);
+  const totalLiquido = totalGeral - totalDespesas;
+
+  return { totalGeral, totalPago, totalPendente, quantidade, totalDespesas, totalLiquido };
 }
 
 function processarFaturamentoPorDia(servicosFiltrados) {
@@ -614,6 +754,32 @@ function criarGraficos(servicosFiltrados) {
   });
 }
 
+const secaoPendentes = document.getElementById("secao-pendentes");
+const corpoTabelaPendentes = document.getElementById("corpo-tabela-pendentes");
+
+function renderizarPendentes(servicosFiltrados) {
+  const pendentes = servicosFiltrados.filter((s) => s.concluido && !s.pago);
+
+  if (pendentes.length === 0) {
+    secaoPendentes.hidden = true;
+    return;
+  }
+
+  secaoPendentes.hidden = false;
+
+  corpoTabelaPendentes.innerHTML = pendentes
+    .map(
+      (s) => `
+    <tr>
+      <td class="nome-servico-cel">${escaparHtml(s.nome)}</td>
+      <td>${s.cliente ? escaparHtml(s.cliente) : "—"}</td>
+      <td class="col-preco">${formatarMoeda(s.preco)}</td>
+      <td>${s.data_criacao ? formatarData(s.data_criacao) : "—"}</td>
+    </tr>`
+    )
+    .join("");
+}
+
 function renderizarRelatorios() {
   const periodo = filtroPeriodo.value;
   const servicosFiltrados = obterServicosNoPeriodo(periodo);
@@ -621,20 +787,24 @@ function renderizarRelatorios() {
   if (servicos.length === 0) {
     relatoriosVazio.hidden = false;
     graficosContainer.style.display = "none";
+    document.getElementById("secao-pendentes").hidden = true;
     return;
   }
 
   relatoriosVazio.hidden = true;
   graficosContainer.style.display = "";
 
-  const { totalGeral, totalPago, totalPendente, quantidade } = processarDadosRelatorios(servicosFiltrados);
+  const { totalGeral, totalPago, totalPendente, quantidade, totalDespesas, totalLiquido } = processarDadosRelatorios(servicosFiltrados);
 
   cardTotalGeral.textContent = formatarMoeda(totalGeral);
+  cardTotalDespesas.textContent = formatarMoeda(totalDespesas);
+  cardTotalLiquido.textContent = formatarMoeda(totalLiquido);
   cardTotalPago.textContent = formatarMoeda(totalPago);
   cardTotalPendente.textContent = formatarMoeda(totalPendente);
   cardQuantidade.textContent = quantidade;
 
   criarGraficos(servicosFiltrados);
+  renderizarPendentes(servicosFiltrados);
 }
 
 /* ===================================================================
@@ -642,7 +812,12 @@ function renderizarRelatorios() {
 =================================================================== */
 
 async function exportarPDF() {
+  try {
   const { jsPDF } = window.jspdf;
+  if (!jsPDF) {
+    mostrarToast("Erro: jsPDF não carregado. Verifique sua conexão.", "erro");
+    return;
+  }
   const doc = new jsPDF();
   const periodo = filtroPeriodo.value;
   const servicosFiltrados = obterServicosNoPeriodo(periodo);
@@ -673,20 +848,22 @@ async function exportarPDF() {
   doc.line(20, 38, 190, 38);
 
   // Resumo
-  const { totalGeral, totalPago, totalPendente, quantidade } = processarDadosRelatorios(servicosFiltrados);
+  const { totalGeral, totalPago, totalPendente, quantidade, totalDespesas, totalLiquido } = processarDadosRelatorios(servicosFiltrados);
 
   doc.setFontSize(11);
   doc.setTextColor(...corTinta);
   doc.text("Resumo", 20, 48);
 
   doc.setFontSize(10);
-  doc.text(`Total Geral: ${formatarMoeda(totalGeral)}`, 20, 56);
-  doc.text(`Total Pago: ${formatarMoeda(totalPago)}`, 20, 63);
-  doc.text(`Total Pendente: ${formatarMoeda(totalPendente)}`, 20, 70);
-  doc.text(`Quantidade de Serviços: ${quantidade}`, 20, 77);
+  doc.text(`Valor Bruto: ${formatarMoeda(totalGeral)}`, 20, 56);
+  doc.text(`Despesas: ${formatarMoeda(totalDespesas)}`, 20, 63);
+  doc.text(`Valor Líquido: ${formatarMoeda(totalLiquido)}`, 20, 70);
+  doc.text(`Recebido: ${formatarMoeda(totalPago)}`, 20, 77);
+  doc.text(`Pendente: ${formatarMoeda(totalPendente)}`, 20, 84);
+  doc.text(`Quantidade de Serviços: ${quantidade}`, 20, 91);
 
   // Tabela de serviços
-  let y = 90;
+  let y = 100;
   doc.setFontSize(11);
   doc.setTextColor(...corTinta);
   doc.text("Detalhamento dos Serviços", 20, y);
@@ -750,9 +927,17 @@ async function exportarPDF() {
     );
   }
 
-  // Salvar
+  // Salvar via diálogo do Electron
   const nomeArquivo = `relatorio_${periodo}_${obterDataHoje().replace(/-/g, "")}.pdf`;
-  doc.save(nomeArquivo);
+  const base64 = doc.output("datauristring").split(",")[1];
+  const resultado = await window.api.salvarPdf({ base64, nomePadrao: nomeArquivo });
+
+  if (resultado.cancelado) return;
+  mostrarToast("PDF exportado com sucesso!", "sucesso");
+  } catch (erro) {
+    console.error("Erro ao exportar PDF:", erro);
+    mostrarToast("Erro ao exportar PDF: " + erro.message, "erro");
+  }
 }
 
 // Event listeners
@@ -770,7 +955,20 @@ async function inicializar() {
   atualizarFiltroCategorias();
   campoData.value = obterDataHoje();
   campoDespesaData.value = obterDataHoje();
+
+  const loadingScreen = document.getElementById("loading-screen");
+  loadingScreen.classList.add("saindo");
+  loadingScreen.addEventListener("transitionend", () => loadingScreen.remove());
+
   irParaTela("cadastro");
+
+  const totalServicos = servicos.length;
+  const totalDespesas = despesas.length;
+  if (totalServicos > 0 || totalDespesas > 0) {
+    mostrarToast(`Save carregado: ${totalServicos} serviço(s) e ${totalDespesas} despesa(s).`, "sucesso");
+  } else {
+    mostrarToast("Bem-vindo! Comece cadastrando um serviço.", "info");
+  }
 }
 
 inicializar();

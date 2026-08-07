@@ -6,8 +6,9 @@ const { app } = require("electron");
 let db;
 
 function obterCaminhoBanco() {
-  const appDir = app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath();
-  const saveDir = path.join(appDir, "Save");
+  const saveDir = app.isPackaged
+    ? path.join(app.getPath("userData"), "Save")
+    : path.join(app.getAppPath(), "Save");
 
   if (!fs.existsSync(saveDir)) {
     fs.mkdirSync(saveDir, { recursive: true });
@@ -31,13 +32,16 @@ async function inicializarBanco() {
     CREATE TABLE IF NOT EXISTS servicos (
       id TEXT PRIMARY KEY,
       nome TEXT NOT NULL,
+      cliente TEXT,
       categoria TEXT,
       preco REAL NOT NULL,
       descricao TEXT,
       ativo INTEGER DEFAULT 1,
       pago INTEGER DEFAULT 0,
+      concluido INTEGER DEFAULT 0,
       data_criacao TEXT,
-      data_pagamento TEXT
+      data_pagamento TEXT,
+      data_entrega TEXT
     )
   `);
 
@@ -58,6 +62,15 @@ async function inicializarBanco() {
   } catch (e) { /* coluna já existe */ }
   try {
     db.run("ALTER TABLE servicos ADD COLUMN data_pagamento TEXT");
+  } catch (e) { /* coluna já existe */ }
+  try {
+    db.run("ALTER TABLE servicos ADD COLUMN cliente TEXT");
+  } catch (e) { /* coluna já existe */ }
+  try {
+    db.run("ALTER TABLE servicos ADD COLUMN concluido INTEGER DEFAULT 0");
+  } catch (e) { /* coluna já existe */ }
+  try {
+    db.run("ALTER TABLE servicos ADD COLUMN data_entrega TEXT");
   } catch (e) { /* coluna já existe */ }
 
   salvarBanco();
@@ -86,6 +99,7 @@ function obterServicos() {
       ...obj,
       ativo: obj.ativo === 1,
       pago: obj.pago === 1,
+      concluido: obj.concluido === 1,
     };
   });
 }
@@ -93,8 +107,8 @@ function obterServicos() {
 function salvarServico(dados) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   db.run(
-    "INSERT INTO servicos (id, nome, categoria, preco, descricao, ativo, pago, data_criacao) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, dados.nome, dados.categoria, dados.preco, dados.descricao, dados.ativo ? 1 : 0, dados.pago ? 1 : 0, dados.data_criacao || null]
+    "INSERT INTO servicos (id, nome, cliente, categoria, preco, descricao, ativo, pago, concluido, data_criacao, data_entrega) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, dados.nome, dados.cliente || null, dados.categoria, dados.preco, dados.descricao, dados.ativo ? 1 : 0, dados.pago ? 1 : 0, dados.concluido ? 1 : 0, dados.data_criacao || null, dados.data_entrega || null]
   );
   salvarBanco();
   return id;
@@ -107,6 +121,10 @@ function atualizarServico(id, dados) {
   if (dados.nome !== undefined) {
     campos.push("nome = ?");
     valores.push(dados.nome);
+  }
+  if (dados.cliente !== undefined) {
+    campos.push("cliente = ?");
+    valores.push(dados.cliente);
   }
   if (dados.categoria !== undefined) {
     campos.push("categoria = ?");
@@ -128,6 +146,10 @@ function atualizarServico(id, dados) {
     campos.push("pago = ?");
     valores.push(dados.pago ? 1 : 0);
   }
+  if (dados.concluido !== undefined) {
+    campos.push("concluido = ?");
+    valores.push(dados.concluido ? 1 : 0);
+  }
   if (dados.data_criacao !== undefined) {
     campos.push("data_criacao = ?");
     valores.push(dados.data_criacao);
@@ -135,6 +157,10 @@ function atualizarServico(id, dados) {
   if (dados.data_pagamento !== undefined) {
     campos.push("data_pagamento = ?");
     valores.push(dados.data_pagamento);
+  }
+  if (dados.data_entrega !== undefined) {
+    campos.push("data_entrega = ?");
+    valores.push(dados.data_entrega);
   }
 
   if (campos.length === 0) return false;
