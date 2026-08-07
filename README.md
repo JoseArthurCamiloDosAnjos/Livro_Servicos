@@ -51,30 +51,7 @@ npm run build:win
 
 O executável será gerado na pasta `dist/`.
 
-## Estrutura do Banco
 
-### Tabela Serviços
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| id | TEXT | Identificador único |
-| nome | TEXT | Nome do serviço |
-| categoria | TEXT | Categoria do serviço |
-| preco | REAL | Preço do serviço |
-| descricao | TEXT | Descrição opcional |
-| ativo | INTEGER | 1 = ativo, 0 = inativo |
-| pago | INTEGER | 1 = pago, 0 = pendente |
-| data_criacao | TEXT | Data do serviço |
-| data_pagamento | TEXT | Data do pagamento |
-
-### Tabela Despesas
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| id | TEXT | Identificador único |
-| nome | TEXT | Nome da despesa |
-| valor | REAL | Valor gasto |
-| categoria | TEXT | Categoria opcional |
-| data | TEXT | Data da despesa |
-| descricao | TEXT | Descrição opcional |
 
 ## Licença
 
