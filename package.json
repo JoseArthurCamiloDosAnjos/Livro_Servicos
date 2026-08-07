@@ -1,0 +1,44 @@
+{
+  "name": "livro-de-servicos",
+  "version": "1.0.0",
+  "description": "Livro de Serviços - Sistema de cadastro de serviços",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "sql.js": "^1.10.0",
+    "jspdf": "^2.5.1"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.livro-servicos.app",
+    "productName": "Livro de Serviços",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "database.js",
+      "index.html",
+      "style.css",
+      "script.js",
+      "Save/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "forceCodeSigning": false,
+    "executableName": "Livro de Serviços"
+  }
+}
